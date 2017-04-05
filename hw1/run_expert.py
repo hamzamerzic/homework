@@ -15,6 +15,7 @@ import numpy as np
 import tf_util
 import gym
 import load_policy
+import os
 
 def main():
     import argparse
@@ -31,8 +32,12 @@ def main():
     policy_fn = load_policy.load_policy(args.expert_policy_file)
     print('loaded and built')
 
-    with tf.Session():
+    loader = tf.train.import_meta_graph('humanoid_nn/model.meta')
+    pred = tf.get_default_graph().get_tensor_by_name("pred:0")
+
+    with tf.Session() as sess:
         tf_util.initialize()
+        loader.restore(sess, os.path.dirname(os.path.abspath(__file__)) + "/humanoid_nn/model")
 
         import gym
         env = gym.make(args.envname)
@@ -48,9 +53,10 @@ def main():
             totalr = 0.
             steps = 0
             while not done:
-                action = policy_fn(obs[None,:])
+                action = sess.run(pred, feed_dict={'X:0': obs[None,:], 'keep_prob:0': 1.0})
                 observations.append(obs)
-                actions.append(action)
+                # Append the expert action.
+                actions.append(policy_fn(obs[None,:]))
                 obs, r, done, _ = env.step(action)
                 totalr += r
                 steps += 1
@@ -66,7 +72,9 @@ def main():
         print('std of return', np.std(returns))
 
         expert_data = {'observations': np.array(observations),
-                       'actions': np.array(actions)}
+                      'actions': np.squeeze(np.array(actions))}
+        print "#observations ", np.array(observations).shape, ", #actions ", np.array(actions).shape
+        pickle.dump(expert_data, open('data.pkl', 'wb'))
 
 if __name__ == '__main__':
     main()
